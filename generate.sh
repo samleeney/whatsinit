@@ -88,24 +88,34 @@ Input transcript follows the separator line.
 EOF
 
 OUT_FILE="${CACHE_FILE}.out.$$"
-if printf '%s\n%s' "$PROMPT" "$context" | \
-    timeout 90 codex exec \
-        -m "$WS_MODEL" \
-        --ephemeral \
-        --skip-git-repo-check \
-        --color never \
-        -o "$OUT_FILE" \
-        - \
-        >/dev/null 2>&1 ; then
-    summary=""
-    if [ -s "$OUT_FILE" ]; then
-        # Collapse to a single line: take every non-empty line, join with space.
-        summary=$(tr -d '\r' < "$OUT_FILE" \
-            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-            | grep -v '^$' \
-            | tr '\n' ' ' \
-            | sed -e 's/[[:space:]]\+/ /g' -e 's/[[:space:]]*$//')
-    fi
+
+if [ -z "${OPENAI_API_KEY:-}" ]; then
+    rm -f "$OUT_FILE" "$TMP_FILE"
+    [ -f "$CACHE_FILE" ] || printf '(OPENAI_API_KEY not set)\n' > "$CACHE_FILE"
+    exit 1
+fi
+
+# Build the request body with jq so multi-line strings JSON-escape cleanly.
+REQ_BODY=$(jq -nc \
+    --arg model "$WS_MODEL" \
+    --arg sys "$PROMPT" \
+    --arg user "$context" \
+    '{model:$model, messages:[{role:"system",content:$sys},{role:"user",content:$user}], max_completion_tokens:60, temperature:0.2}')
+
+HTTP_CODE=$(curl -sS --max-time 30 \
+    -o "$OUT_FILE" -w '%{http_code}' \
+    https://api.openai.com/v1/chat/completions \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$REQ_BODY" 2>/dev/null)
+
+if [ "$HTTP_CODE" = "200" ] && [ -s "$OUT_FILE" ]; then
+    summary=$(jq -r '.choices[0].message.content // empty' "$OUT_FILE" 2>/dev/null \
+        | tr -d '\r' \
+        | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+        | grep -v '^$' \
+        | tr '\n' ' ' \
+        | sed -e 's/[[:space:]]\+/ /g' -e 's/[[:space:]]*$//')
     rm -f "$OUT_FILE"
 
     # Strip wrapping quotes / code fences.
@@ -138,8 +148,12 @@ if printf '%s\n%s' "$PROMPT" "$context" | \
     mv "$TMP_FILE" "$CACHE_FILE"
 else
     rm -f "$OUT_FILE" "$TMP_FILE"
-    # Leave existing cache in place on failure; touch it so we don't retry
-    # immediately on the next daemon tick.
-    [ -f "$CACHE_FILE" ] && touch "$CACHE_FILE"
+    # On failure, stamp the cache so the daemon's age-based retry kicks in
+    # (WS_REFRESH_AGE) instead of hammering a broken model every tick.
+    if [ -f "$CACHE_FILE" ]; then
+        touch "$CACHE_FILE"
+    else
+        printf '(summary unavailable)\n' > "$CACHE_FILE"
+    fi
     exit 1
 fi

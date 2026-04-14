@@ -20,8 +20,6 @@ tput civis 2>/dev/null
 stty -echo 2>/dev/null
 printf '\033[?25l'
 
-tmux select-pane -T "$TITLE" 2>/dev/null || true
-
 # Pin every tmux query to OUR pane, not the currently-active one.
 # Without -t, tmux display-message returns info about whichever pane
 # is active — which for a passive sidebar is almost never us.
@@ -29,6 +27,8 @@ SELF_PANE="${TMUX_PANE:-}"
 if [ -z "$SELF_PANE" ]; then
     SELF_PANE=$(tmux display-message -p '#{pane_id}' 2>/dev/null || echo "")
 fi
+
+tmux select-pane -t "$SELF_PANE" -T "$TITLE" 2>/dev/null || true
 
 MY_SESSION=$(tmux display-message -p -t "$SELF_PANE" '#S' 2>/dev/null || echo "?")
 MY_WINDOW_ID=$(tmux display-message -p -t "$SELF_PANE" '#{window_id}' 2>/dev/null || echo "")

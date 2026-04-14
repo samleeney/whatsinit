@@ -2,7 +2,7 @@
 # Shared helpers for the window-summary sidebar feature.
 
 WS_CACHE_DIR="${WS_CACHE_DIR:-$HOME/.cache/tmux-window-summary}"
-WS_MODEL="${WS_MODEL:-gpt-5.3-codex-spark}"
+WS_MODEL="${WS_MODEL:-gpt-4.1-mini}"
 WS_REFRESH_AGE="${WS_REFRESH_AGE:-600}"   # seconds
 WS_CAPTURE_LINES="${WS_CAPTURE_LINES:-80}"
 WS_MAX_CONTEXT_BYTES="${WS_MAX_CONTEXT_BYTES:-12000}"
